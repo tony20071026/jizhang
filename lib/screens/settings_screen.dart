@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/transaction_item.dart';
+import '../services/ai_extract_service.dart';
 import '../services/db_service.dart';
 import '../services/export_service.dart';
 import '../services/webdav_service.dart';
@@ -28,12 +29,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _userController = TextEditingController();
   final TextEditingController _pwdController = TextEditingController();
 
+  final TextEditingController _aiKeyController = TextEditingController();
+  final TextEditingController _aiBaseController = TextEditingController();
+  final TextEditingController _aiModelController = TextEditingController();
+
   bool _obscure = true;
+  bool _aiObscure = true;
   String? _busyTask;
   DateTime? _lastBackup;
 
   /// 云同步入口开关：关闭后整个 WebDAV 区块不再显示。
   bool _webdavEnabled = true;
+
+  /// AI 截图记账开关。
+  bool _aiEnabled = false;
 
   bool get _busy => _busyTask != null;
 
@@ -53,6 +62,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (stamp != null) {
       _lastBackup = DateTime.tryParse(stamp);
     }
+
+    _aiEnabled = AiExtractService.enabled;
+    _aiKeyController.text =
+        DBService.readSetting<String>(AiExtractService.keyApiKey) ?? '';
+    _aiBaseController.text =
+        DBService.readSetting<String>(AiExtractService.keyBaseUrl) ?? '';
+    _aiModelController.text =
+        DBService.readSetting<String>(AiExtractService.keyModel) ?? '';
+  }
+
+  Future<void> _toggleAi(bool value) async {
+    HapticFeedback.lightImpact();
+    setState(() => _aiEnabled = value);
+    await DBService.writeSetting(AiExtractService.keyEnabled, value);
+    _toast(value ? '已开启 AI 截图记账' : '已关闭 AI 截图记账');
   }
 
   Future<void> _toggleWebDav(bool value) async {
@@ -67,6 +91,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _urlController.dispose();
     _userController.dispose();
     _pwdController.dispose();
+    _aiKeyController.dispose();
+    _aiBaseController.dispose();
+    _aiModelController.dispose();
     super.dispose();
   }
 
@@ -106,11 +133,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await action();
     } catch (e) {
-      _toast(e is WebDavException ? e.message : '操作失败：$e', error: true);
+      _toast(
+        e is WebDavException
+            ? e.message
+            : e is AiExtractException
+            ? e.message
+            : '操作失败：$e',
+        error: true,
+      );
     } finally {
       if (mounted) setState(() => _busyTask = null);
     }
   }
+
+  // ------------------------------------------------------------------ AI 配置
+
+  Future<void> _persistAiConfig() async {
+    await DBService.writeSetting(
+      AiExtractService.keyApiKey,
+      _aiKeyController.text.trim(),
+    );
+    await DBService.writeSetting(
+      AiExtractService.keyBaseUrl,
+      _aiBaseController.text.trim(),
+    );
+    await DBService.writeSetting(
+      AiExtractService.keyModel,
+      _aiModelController.text.trim(),
+    );
+  }
+
+  Future<void> _saveAiConfig() async {
+    FocusScope.of(context).unfocus();
+    await _persistAiConfig();
+    _toast('AI 配置已保存');
+  }
+
+  Future<void> _testAi() => _run(
+    task: 'ai_test',
+    action: () async {
+      await _persistAiConfig();
+      await AiExtractService.testConnection();
+      _toast('连接成功，可以识别截图了');
+    },
+  );
 
   Future<void> _testConnection() => _run(
     task: 'test',
@@ -148,9 +214,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             borderRadius: BorderRadius.circular(20),
           ),
           title: const Text('从云端恢复'),
-          content: const Text(
-            '将下载 /my_ledger/backup.json 并覆盖当前设备上的全部流水，是否继续？',
-          ),
+          content: const Text('将下载 /my_ledger/backup.json 并覆盖当前设备上的全部流水，是否继续？'),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -225,9 +289,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: <Widget>[
           ScreenHeader(
             title: '设置',
-            subtitle: _webdavEnabled
-                ? 'WebDAV 备份与本地数据管理'
-                : '本地数据管理 · 云同步已隐藏',
+            subtitle: _webdavEnabled ? 'WebDAV 备份与本地数据管理' : '本地数据管理 · 云同步已隐藏',
           ),
           const SizedBox(height: 14),
           _buildSyncToggleCard(),
@@ -236,6 +298,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildServerCard(),
             const SizedBox(height: AppSpacing.gap),
           ],
+          _buildAiCard(),
+          const SizedBox(height: AppSpacing.gap),
           _buildDataCard(),
           const SizedBox(height: AppSpacing.gap),
           _buildAboutCard(),
@@ -280,13 +344,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  _webdavEnabled
-                      ? '备份 / 恢复入口已显示'
-                      : '入口已隐藏，本地数据不受影响',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: palette.textSecondary,
-                  ),
+                  _webdavEnabled ? '备份 / 恢复入口已显示' : '入口已隐藏，本地数据不受影响',
+                  style: TextStyle(fontSize: 12, color: palette.textSecondary),
                 ),
               ],
             ),
@@ -313,7 +372,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 4),
           Text(
             '备份文件将保存在 /my_ledger/backup.json',
-            style: TextStyle(fontSize: 12, color: context.palette.textSecondary),
+            style: TextStyle(
+              fontSize: 12,
+              color: context.palette.textSecondary,
+            ),
           ),
           const SizedBox(height: 16),
           _LabeledField(
@@ -466,6 +528,159 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _toast('已关闭云同步，入口已隐藏');
   }
 
+  /// AI 截图记账配置：位于 WebDAV 区块下方。
+  Widget _buildAiCard() {
+    final AppPalette palette = context.palette;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _aiEnabled
+                      ? palette.primarySoft
+                      : palette.surfaceMuted,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 20,
+                  color: _aiEnabled ? palette.primary : palette.textHint,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'AI 截图记账',
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w600,
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _aiEnabled ? '长按首页「＋」上传支付截图自动识别' : '已关闭，长按「＋」不会触发识别',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(value: _aiEnabled, onChanged: _toggleAi),
+            ],
+          ),
+          if (_aiEnabled) ...<Widget>[
+            const SizedBox(height: 16),
+            Divider(height: 1, color: palette.hairline),
+            const SizedBox(height: 16),
+            Text(
+              '识别服务（OpenAI 兼容多模态接口）',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: palette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '仅在长按记账按钮时才把截图发送到该服务，不落盘、不入云。',
+              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            _LabeledField(
+              label: 'API Key',
+              child: TextField(
+                controller: _aiKeyController,
+                enabled: !_busy,
+                obscureText: _aiObscure,
+                textInputAction: TextInputAction.next,
+                style: const TextStyle(fontSize: 14.5),
+                decoration: InputDecoration(
+                  hintText: 'sk-...',
+                  prefixIcon: const Icon(Icons.key_outlined, size: 19),
+                  suffixIcon: IconButton(
+                    onPressed: () => setState(() => _aiObscure = !_aiObscure),
+                    icon: Icon(
+                      _aiObscure
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 19,
+                      color: palette.textHint,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _LabeledField(
+              label: 'Base URL',
+              child: TextField(
+                controller: _aiBaseController,
+                enabled: !_busy,
+                keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.next,
+                style: const TextStyle(fontSize: 14.5),
+                decoration: InputDecoration(
+                  hintText: AiExtractService.defaultBaseUrl,
+                  prefixIcon: const Icon(Icons.link_rounded, size: 19),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _LabeledField(
+              label: '模型',
+              child: TextField(
+                controller: _aiModelController,
+                enabled: !_busy,
+                textInputAction: TextInputAction.done,
+                style: const TextStyle(fontSize: 14.5),
+                decoration: InputDecoration(
+                  hintText: AiExtractService.defaultModel,
+                  prefixIcon: const Icon(Icons.memory_rounded, size: 19),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _TaskButton(
+                    label: '保存配置',
+                    icon: Icons.save_outlined,
+                    busy: false,
+                    disabled: _busy,
+                    outlined: true,
+                    onPressed: _saveAiConfig,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _TaskButton(
+                    label: '测试连接',
+                    icon: Icons.wifi_tethering_rounded,
+                    busy: _busyTask == 'ai_test',
+                    disabled: _busy,
+                    onPressed: _testAi,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildDataCard() {
     return AppCard(
       child: Column(
@@ -483,10 +698,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Row(
             children: <Widget>[
               Expanded(
-                child: _DataStat(
-                  label: '流水总数',
-                  value: '${DBService.count} 笔',
-                ),
+                child: _DataStat(label: '流水总数', value: '${DBService.count} 笔'),
               ),
               Expanded(
                 child: _DataStat(
@@ -670,10 +882,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  int _usedCategories() => DBService.allSorted()
-      .map((TransactionItem t) => t.title)
-      .toSet()
-      .length;
+  int _usedCategories() =>
+      DBService.allSorted().map((TransactionItem t) => t.title).toSet().length;
 
   Widget _buildAboutCard() {
     return AppCard(
@@ -833,7 +1043,10 @@ class _DataStat extends StatelessWidget {
         children: <Widget>[
           Text(
             label,
-            style: TextStyle(fontSize: 12, color: context.palette.textSecondary),
+            style: TextStyle(
+              fontSize: 12,
+              color: context.palette.textSecondary,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -862,7 +1075,10 @@ class _InfoRow extends StatelessWidget {
       children: <Widget>[
         Text(
           title,
-          style: TextStyle(fontSize: 13.5, color: context.palette.textSecondary),
+          style: TextStyle(
+            fontSize: 13.5,
+            color: context.palette.textSecondary,
+          ),
         ),
         const Spacer(),
         Text(

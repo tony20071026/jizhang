@@ -1,20 +1,45 @@
-# jizhang
+# 轻账 · jizhang
 
-A new Flutter project.
+本地优先的个人记账 Flutter 应用：数据默认只存在手机本机（Hive），可选 WebDAV 云备份。
 
-## Getting Started
+## 功能
 
-This project is a starting point for a Flutter application.
+- 📒 **记账**：支出 / 收入切换，网格化分类，金额 / 日期 / 备注
+- 🗂 **分类管理**：内置分类 + 自定义增删、拖拽排序、图标选择
+- 📊 **统计**：月度收支汇总、分类饼图、收支趋势折线图、分类占比
+- ☁️ **WebDAV 云备份 / 恢复** + 本地 JSON 导出 / 导入
+- 🤖 **AI 截图记账**（新增）：长按记账按钮上传支付截图，多模态大模型自动识别金额 / 分类 / 时间，预填记账弹窗，确认后入账
+- 🌗 深色模式、自定义应用图标
 
-A few resources to get you started if this is your first Flutter project:
+## AI 截图记账
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+长按首页右下角的「＋」按钮：
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+1. 选择「从相册选择」或「拍摄」一张微信 / 支付宝等支付截图
+2. 大模型识别出 **实付金额、收支方向、分类、交易时间、商户**
+3. 以识别结果**预填**记账弹窗，你确认或修改后保存
+
+识别结果永远不会直接入账，必须经过人工确认，避免误记。
+
+### 配置
+
+设置页 → **AI 截图记账**（位于 WebDAV 区块下方）：
+
+| 项 | 说明 |
+| --- | --- |
+| 开关 | 打开后长按「＋」才会触发识别 |
+| API Key | 你的大模型服务密钥（仅保存在本机 Hive） |
+| Base URL | OpenAI 兼容接口地址，默认 `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| 模型 | 支持图像输入的模型，默认 `qwen3.8-flash` |
+
+填好后点「测试连接」验证；截图仅在识别时发送到该服务，**不落盘、不入云**。
+
+## 开发
+
+```bash
+flutter pub get
+flutter run
+```
 
 ## License
 
