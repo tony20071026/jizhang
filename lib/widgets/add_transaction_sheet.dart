@@ -11,14 +11,37 @@ import '../utils/formatters.dart';
 
 /// 大圆角记账弹窗：支出 / 收入 Tab 切换 + 网格化分类 + 金额 + 日期 + 备注。
 class AddTransactionSheet extends StatefulWidget {
-  const AddTransactionSheet({super.key, this.initialDate});
+  const AddTransactionSheet({
+    super.key,
+    this.initialDate,
+    this.initialAmount,
+    this.initialCategory,
+    this.initialExpense,
+    this.initialNote,
+  });
 
   final DateTime? initialDate;
+
+  /// 预填金额（AI 识别截图时使用）。
+  final double? initialAmount;
+
+  /// 预填分类名称（不存在时会回退到第一个分类）。
+  final String? initialCategory;
+
+  /// 预填收支方向。
+  final bool? initialExpense;
+
+  /// 预填备注。
+  final String? initialNote;
 
   /// 弹出记账面板。
   static Future<TransactionItem?> show(
     BuildContext context, {
     DateTime? initialDate,
+    double? initialAmount,
+    String? initialCategory,
+    bool? initialExpense,
+    String? initialNote,
   }) {
     HapticFeedback.lightImpact();
     return showModalBottomSheet<TransactionItem>(
@@ -31,7 +54,13 @@ class AddTransactionSheet extends StatefulWidget {
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
           ),
-          child: AddTransactionSheet(initialDate: initialDate),
+          child: AddTransactionSheet(
+            initialDate: initialDate,
+            initialAmount: initialAmount,
+            initialCategory: initialCategory,
+            initialExpense: initialExpense,
+            initialNote: initialNote,
+          ),
         );
       },
     );
@@ -58,8 +87,33 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
   @override
   void initState() {
     super.initState();
+    _isExpense = widget.initialExpense ?? true;
     _date = widget.initialDate ?? DateTime.now();
-    _category = _categories.first.name;
+    final List<CategoryItem> list = _categories;
+    final String? wanted = widget.initialCategory;
+    if (wanted != null && list.any((CategoryItem c) => c.name == wanted)) {
+      _category = wanted;
+    } else {
+      _category = list.isNotEmpty ? list.first.name : '其他';
+    }
+    if (widget.initialAmount != null) {
+      _amountController.text = _formatAmount(widget.initialAmount!);
+    }
+    if (widget.initialNote != null && widget.initialNote!.trim().isNotEmpty) {
+      _noteController.text = widget.initialNote!.trim();
+    }
+  }
+
+  /// 金额格式化：整数不显示小数位，非整数保留两位并去掉多余的 0。
+  static String _formatAmount(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    String text = value.toStringAsFixed(2);
+    text = text
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+    return text;
   }
 
   @override
@@ -88,9 +142,8 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
       builder: (BuildContext context, Widget? child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(
-              context,
-            ).colorScheme.copyWith(primary: context.palette.primary),
+            colorScheme: Theme.of(context).colorScheme
+                .copyWith(primary: context.palette.primary),
           ),
           child: child!,
         );
@@ -283,7 +336,9 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
   }
 
   Widget _buildAmountField() {
-    final Color accent = _isExpense ? context.palette.expense : context.palette.income;
+    final Color accent = _isExpense
+        ? context.palette.expense
+        : context.palette.income;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
@@ -305,12 +360,14 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
           Expanded(
             child: TextField(
               controller: _amountController,
-              autofocus: true,
+              autofocus: widget.initialAmount == null,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               inputFormatters: <TextInputFormatter>[
-                FilteringTextInputFormatter.allow(RegExp(r'^\d{0,9}\.?\d{0,2}')),
+                FilteringTextInputFormatter.allow(
+                  RegExp(r'^\d{0,9}\.?\d{0,2}'),
+                ),
               ],
               style: TextStyle(
                 fontSize: 30,
@@ -389,7 +446,8 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
         if (!mounted) return;
         setState(() {
           final List<CategoryItem> list = CategoryService.of(_isExpense);
-          if (list.isNotEmpty && !list.any((CategoryItem c) => c.name == _category)) {
+          if (list.isNotEmpty &&
+              !list.any((CategoryItem c) => c.name == _category)) {
             _category = list.first.name;
           }
         });
@@ -458,7 +516,9 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
           child: FilledButton(
             onPressed: _saving ? null : _submit,
             style: FilledButton.styleFrom(
-              backgroundColor: _isExpense ? context.palette.expense : context.palette.income,
+              backgroundColor: _isExpense
+                  ? context.palette.expense
+                  : context.palette.income,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -554,7 +614,9 @@ class _TypeTab extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: selected ? context.palette.onPrimary : context.palette.textSecondary,
+              color: selected
+                  ? context.palette.onPrimary
+                  : context.palette.textSecondary,
             ),
           ),
         ),
@@ -612,7 +674,9 @@ class _CategoryCell extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected ? category.color : context.palette.textSecondary,
+                color: selected
+                    ? category.color
+                    : context.palette.textSecondary,
               ),
             ),
           ],
