@@ -154,30 +154,64 @@ class _MainScaffoldState extends State<MainScaffold> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
+      barrierColor: const Color(0x66000000),
       builder: (BuildContext dialogContext) {
+        final AppPalette palette = dialogContext.palette;
         return PopScope(
           canPop: false,
           child: Center(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              width: 236,
+              padding: const EdgeInsets.fromLTRB(24, 26, 24, 24),
               decoration: BoxDecoration(
-                color: dialogContext.palette.surface,
-                borderRadius: BorderRadius.circular(18),
+                color: palette.surface,
+                borderRadius: BorderRadius.circular(AppRadius.sheet),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.14),
+                    blurRadius: 30,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  const SizedBox(
-                    width: 26,
-                    height: 26,
-                    child: CircularProgressIndicator(strokeWidth: 2.6),
+                  Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      color: palette.primarySoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: SizedBox(
+                        width: 26,
+                        height: 26,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.6,
+                          color: palette.primary,
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   Text(
-                    'AI 识别中…',
+                    'AI 识别中',
                     style: TextStyle(
-                      fontSize: 14,
-                      color: dialogContext.palette.textSecondary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '正在读取金额与分类…',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: palette.textSecondary,
                     ),
                   ),
                 ],
@@ -192,7 +226,8 @@ class _MainScaffoldState extends State<MainScaffold> {
   void _dismissLoading() {
     if (!_loading) return;
     _loading = false;
-    Navigator.of(context, rootNavigator: true).maybePop();
+    // Force-pop: the dialog's PopScope(canPop: false) blocks maybePop().
+    Navigator.of(context, rootNavigator: true).pop();
   }
 
   void _snack(String message, {bool error = false}) {
